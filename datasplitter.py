@@ -1,56 +1,139 @@
-import os
-import shutil
+from __future__ import annotations
+
+import argparse
 import random
+import shutil
+from pathlib import Path
 
-# Ana data klasörü
-DATA_DIR = "/Users/zehraatalay/Desktop/data"
 
-# Yeni klasörlerin yollarını belirleyin
-TRAIN_DIR = os.path.join(DATA_DIR, "train")
-VALIDATION_DIR = os.path.join(DATA_DIR, "validation")
-TEST_DIR = os.path.join(DATA_DIR, "test")
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+SPLITS = ("train", "validation", "test")
 
-# Eğer bu klasörler yoksa, oluştur
-os.makedirs(TRAIN_DIR, exist_ok=True)
-os.makedirs(VALIDATION_DIR, exist_ok=True)
-os.makedirs(TEST_DIR, exist_ok=True)
 
-# Her alt klasörü işle
-for dir_ in os.listdir(DATA_DIR):
-    dir_path = os.path.join(DATA_DIR, dir_)
+def split_dataset(
+    source_dir: Path,
+    output_dir: Path,
+    seed: int = 42,
+) -> None:
+    """Split class-organized images into train, validation and test sets."""
 
-    # Sadece alt klasörleri işle
-    if os.path.isdir(dir_path) and not dir_.startswith('.') and dir_ not in ["train", "validation", "test"]:
-        print(f"Processing folder: {dir_}")
+    source_dir = source_dir.resolve()
+    output_dir = output_dir.resolve()
 
-        # Dosyaların tam yolunu al ve karıştır
-        files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
-        random.shuffle(files)  # Dosyaları karıştır
+    if not source_dir.is_dir():
+        raise FileNotFoundError(f"Source directory not found: {source_dir}")
 
-        # Veriyi böl (80% train, 10% validation, 10% test)
-        train_split = int(len(files) * 0.8)
-        val_split = int(len(files) * 0.9)
+    if source_dir == output_dir or source_dir in output_dir.parents:
+        raise ValueError(
+            "Output directory must be outside the source directory."
+        )
 
-        train_files = files[:train_split]
-        validation_files = files[train_split:val_split]
-        test_files = files[val_split:]
+    if output_dir.exists():
+        raise FileExistsError(
+            f"Output directory already exists: {output_dir}. "
+            "Choose a new directory to avoid mixing dataset splits."
+        )
 
-        # Hedef alt klasörlerini oluştur
-        os.makedirs(os.path.join(TRAIN_DIR, dir_), exist_ok=True)
-        os.makedirs(os.path.join(VALIDATION_DIR, dir_), exist_ok=True)
-        os.makedirs(os.path.join(TEST_DIR, dir_), exist_ok=True)
+    class_dirs = sorted(
+        path
+        for path in source_dir.iterdir()
+        if path.is_dir()
+        and not path.name.startswith(".")
+        and path.name not in SPLITS
+    )
 
-        # Train dosyalarını taşı
-        for file in train_files:
-            shutil.copy(os.path.join(dir_path, file), os.path.join(TRAIN_DIR, dir_, file))
+    if not class_dirs:
+        raise ValueError(f"No class directories found in: {source_dir}")
 
-        # Validation dosyalarını taşı
-        for file in validation_files:
-            shutil.copy(os.path.join(dir_path, file), os.path.join(VALIDATION_DIR, dir_, file))
+    rng = random.Random(seed)
 
-        # Test dosyalarını taşı
-        for file in test_files:
-            shutil.copy(os.path.join(dir_path, file), os.path.join(TEST_DIR, dir_, file))
+    # Validate the input before creating the output directory.
+    class_images = {}
 
-        print(f"Processed folder: {dir_}")
-print("Data split into train, validation, and test folders successfully.")
+    for class_dir in class_dirs:
+        images = sorted(
+            path
+            for path in class_dir.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in IMAGE_EXTENSIONS
+        )
+
+        if not images:
+            raise ValueError(f"No images found in: {class_dir}")
+
+        class_images[class_dir.name] = images
+
+    output_dir.mkdir(parents=True)
+
+    totals = {split: 0 for split in SPLITS}
+
+    for class_name, images in class_images.items():
+        images = images.copy()
+        rng.shuffle(images)
+
+        train_end = int(len(images) * 0.8)
+        validation_end = int(len(images) * 0.9)
+
+        split_images = {
+            "train": images[:train_end],
+            "validation": images[train_end:validation_end],
+            "test": images[validation_end:],
+        }
+
+        for split, files in split_images.items():
+            destination = output_dir / split / class_name
+            destination.mkdir(parents=True, exist_ok=True)
+
+            for image_path in files:
+                shutil.copy2(
+                    image_path,
+                    destination / image_path.name,
+                )
+
+            totals[split] += len(files)
+
+        print(f"Processed class: {class_name} ({len(images)} images)")
+
+    print("\nDataset split completed.")
+
+    for split, count in totals.items():
+        print(f"{split.capitalize()}: {count} images")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Split class-organized image datasets."
+    )
+
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        required=True,
+        help="Directory containing one folder per class.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New directory where dataset splits will be created.",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible splitting.",
+    )
+
+    args = parser.parse_args()
+
+    split_dataset(
+        source_dir=args.source_dir,
+        output_dir=args.output_dir,
+        seed=args.seed,
+    )
+
+
+if __name__ == "__main__":
+    main()
