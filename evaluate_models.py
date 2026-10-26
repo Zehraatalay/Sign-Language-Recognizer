@@ -25,44 +25,71 @@ MODEL_FILES = {
 }
 
 
-def evaluate_models(dataset_dir: Path, split: str = "test") -> list[dict]:
+def evaluate_models(
+    dataset_dir: Path,
+    split: str = "test",
+    models_dir: Path | None = None,
+) -> list[dict]:
     """Evaluate saved classifiers on a preprocessed dataset split."""
 
+    # Use the dataset directory if no separate model directory is provided.
+    if models_dir is None:
+        models_dir = dataset_dir
+
+    # Load preprocessed features and labels.
     X, y = load_dataset(dataset_dir, split)
 
     results = []
 
     for model_name, filename in MODEL_FILES.items():
-        model_path = dataset_dir / filename
+        model_path = models_dir / filename
 
-        if not model_path.exists():
+        # Skip models that are not available.
+        if not model_path.is_file():
             print(f"[SKIP] {model_name}: model file not found.")
             continue
 
+        # Load the pretrained model.
         with model_path.open("rb") as file:
             saved = pickle.load(file)
 
         model = saved["model"] if isinstance(saved, dict) else saved
 
+        # Generate predictions.
         predictions = model.predict(X)
 
+        # Calculate evaluation metrics.
         results.append(
             {
                 "model": model_name,
                 "accuracy": accuracy_score(y, predictions),
                 "macro_precision": precision_score(
-                    y, predictions, average="macro", zero_division=0
+                    y,
+                    predictions,
+                    average="macro",
+                    zero_division=0,
                 ),
                 "macro_recall": recall_score(
-                    y, predictions, average="macro", zero_division=0
+                    y,
+                    predictions,
+                    average="macro",
+                    zero_division=0,
                 ),
                 "macro_f1": f1_score(
-                    y, predictions, average="macro", zero_division=0
+                    y,
+                    predictions,
+                    average="macro",
+                    zero_division=0,
                 ),
             }
         )
 
-    return sorted(results, key=lambda row: row["macro_f1"], reverse=True)
+    # Rank models by macro F1 score.
+    return sorted(
+        results,
+        key=lambda row: row["macro_f1"],
+        reverse=True,
+    )
 
 
 def save_results(results: list[dict], output_path: Path) -> None:
@@ -74,7 +101,11 @@ def save_results(results: list[dict], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=results[0].keys())
+        writer = csv.DictWriter(
+            file,
+            fieldnames=results[0].keys(),
+        )
+
         writer.writeheader()
         writer.writerows(results)
 
@@ -88,7 +119,14 @@ def main() -> None:
         "--dataset-dir",
         type=Path,
         required=True,
-        help="Directory containing processed data and saved models.",
+        help="Directory containing preprocessed dataset splits.",
+    )
+
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        default=None,
+        help="Directory containing saved models. Defaults to dataset directory.",
     )
 
     parser.add_argument(
@@ -106,7 +144,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    results = evaluate_models(args.dataset_dir, args.split)
+    # Evaluate models using the specified dataset and model directories.
+    results = evaluate_models(
+        dataset_dir=args.dataset_dir,
+        split=args.split,
+        models_dir=args.models_dir,
+    )
 
     if not results:
         print("No models were evaluated.")
