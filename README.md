@@ -1,15 +1,17 @@
 Sign Language Recognizer
 
-A machine learning project for recognizing 24 static American Sign Language (ASL) letters using MediaPipe hand landmarks and scikit-learn classifiers. The system supports real-time recognition through a webcam.
+A machine learning-based system for recognizing 24 static American Sign Language (ASL) letters using MediaPipe hand landmarks and scikit-learn classifiers.
+
+Supports real-time recognition through a webcam.
 
 How It Works
 
-1. Hand Detection: MediaPipe extracts 21 hand landmarks.
-2. Feature Extraction: Landmark coordinates are converted into 42 position-normalized features.
-3. Classification: Six ML models are trained and evaluated.
+1. Hand Detection: MediaPipe detects 21 hand landmarks.
+2. Feature Extraction: Landmark coordinates are transformed into 42 translation-normalized features.
+3. Classification: Six machine learning models are trained and evaluated.
 4. Real-Time Inference: OpenCV displays predictions from the selected model.
 
-Models: Random Forest, KNN, SVM, Logistic Regression, Decision Tree, and Gaussian Naive Bayes.
+Models: Random Forest · KNN · SVM · Logistic Regression · Decision Tree · Gaussian Naive Bayes
 
 Results
 
@@ -23,40 +25,52 @@ Decision Tree	98.31%	79.59%
 Logistic Regression	92.06%	77.89%
 Naive Bayes	86.82%	65.99%
 
-Random Forest achieved the highest accuracy on both datasets.
+Best-performing model: Random Forest on both datasets.
 
-Detailed evaluation results are available in the results/ directory.
+Full evaluation metrics (accuracy, precision, recall, and macro F1) are available in results/.
 
 Installation
 
-Requires Python 3.11.
+Requirements: Python 3.11
 
 pip install -r requirements.txt
 
 Usage
 
-Prepare features:
+1. Extract features
 
-python dataprocessing.py --dataset-dir /path/to/dataset --output-dir /path/to/processed
+python dataprocessing.py \
+  --dataset-dir /path/to/dataset \
+  --output-dir /path/to/processed
 
-Train models:
+2. Train models
 
-python train_models.py --dataset-dir /path/to/processed --model all --output-dir trained_models
+python train_models.py \
+  --dataset-dir /path/to/processed \
+  --model all \
+  --output-dir trained_models
 
-Evaluate models:
+3. Evaluate models
 
-python evaluate_models.py --dataset-dir /path/to/processed --models-dir trained_models --split test
+python evaluate_models.py \
+  --dataset-dir /path/to/processed \
+  --models-dir trained_models \
+  --split test
 
-Run webcam recognition:
+4. Run real-time recognition
 
-python realtimetesting.py --models-dir trained_models --model random_forest
+python realtimetesting.py \
+  --models-dir trained_models \
+  --model random_forest
 
-Use --model all to compare all six classifiers.
+Use --model all to compare predictions from all six classifiers.
 
 Limitations
 
 * Recognizes 24 static ASL letters; motion-based J and Z are excluded.
-* Processes one hand at a time.
-* Test accuracy does not necessarily reflect performance in real-world webcam conditions.
+* Supports single-hand recognition.
+* Test accuracy may not reflect performance under different real-world conditions.
+
+⸻
 
 Tech Stack: Python · MediaPipe · OpenCV · NumPy · scikit-learn
