@@ -1,76 +1,75 @@
-Sign Language Recognizer
+# Sign Language Recognizer
 
-A machine learning-based system for recognizing 24 static American Sign Language (ASL) letters using MediaPipe hand landmarks and scikit-learn classifiers.
+Real-time recognition of **24 static American Sign Language (ASL) letters** using MediaPipe and traditional machine learning.
 
-Supports real-time recognition through a webcam.
+The system extracts hand landmarks, classifies gestures using six ML algorithms, and displays predictions through a webcam.
 
-How It Works
+## Approach
 
-1. Hand Detection: MediaPipe detects 21 hand landmarks.
-2. Feature Extraction: Landmark coordinates are transformed into 42 translation-normalized features.
-3. Classification: Six machine learning models are trained and evaluated.
-4. Real-Time Inference: OpenCV displays predictions from the selected model.
+**Hand Detection → Feature Extraction → Classification → Real-Time Prediction**
 
-Models: Random Forest · KNN · SVM · Logistic Regression · Decision Tree · Gaussian Naive Bayes
+- **MediaPipe Hands:** Detects 21 hand landmarks.
+- **Feature Engineering:** Converts landmark coordinates into 42 translation-normalized features.
+- **Machine Learning:** Compares Random Forest, KNN, SVM, Logistic Regression, Decision Tree, and Gaussian Naive Bayes.
+- **OpenCV:** Enables real-time webcam inference.
 
-Results
+## Model Performance
 
 Models were trained and evaluated separately on two datasets.
 
-Model	MyDataset Accuracy	Roboflow Accuracy
-Random Forest	99.32%	92.18%
-KNN	99.32%	91.50%
-SVM	97.97%	91.84%
-Decision Tree	98.31%	79.59%
-Logistic Regression	92.06%	77.89%
-Naive Bayes	86.82%	65.99%
+| Model | MyDataset | Roboflow |
+|:---|---:|---:|
+| **Random Forest** | **99.32%** | **92.18%** |
+| KNN | 99.32% | 91.50% |
+| SVM | 97.97% | 91.84% |
+| Decision Tree | 98.31% | 79.59% |
+| Logistic Regression | 92.06% | 77.89% |
+| Naive Bayes | 86.82% | 65.99% |
 
-Best-performing model: Random Forest on both datasets.
+*Test accuracy (%). Random Forest achieved the highest accuracy on both datasets.*
 
-Full evaluation metrics (accuracy, precision, recall, and macro F1) are available in results/.
+Full evaluation metrics: [MyDataset](results/mydataset_metrics.csv) · [Roboflow](results/roboflow_metrics.csv)
 
-Installation
+## Getting Started
 
-Requirements: Python 3.11
+**Requirements:** Python 3.11
 
+```bash
 pip install -r requirements.txt
+```
 
-Usage
+### 1. Extract Features
 
-1. Extract features
+```bash
+python dataprocessing.py --dataset-dir /path/to/dataset --output-dir /path/to/processed
+```
 
-python dataprocessing.py \
-  --dataset-dir /path/to/dataset \
-  --output-dir /path/to/processed
+### 2. Train Models
 
-2. Train models
+```bash
+python train_models.py --dataset-dir /path/to/processed --model all --output-dir trained_models
+```
 
-python train_models.py \
-  --dataset-dir /path/to/processed \
-  --model all \
-  --output-dir trained_models
+### 3. Evaluate Models
 
-3. Evaluate models
+```bash
+python evaluate_models.py --dataset-dir /path/to/processed --models-dir trained_models --split test
+```
 
-python evaluate_models.py \
-  --dataset-dir /path/to/processed \
-  --models-dir trained_models \
-  --split test
+### 4. Run Webcam Recognition
 
-4. Run real-time recognition
+```bash
+python realtimetesting.py --models-dir trained_models --model random_forest
+```
 
-python realtimetesting.py \
-  --models-dir trained_models \
-  --model random_forest
+Use `--model all` to compare all six classifiers.
 
-Use --model all to compare predictions from all six classifiers.
+## Limitations
 
-Limitations
+- Supports 24 static ASL letters; motion-based **J** and **Z** are excluded.
+- Processes one hand at a time.
+- Dataset test accuracy may not reflect performance in real-world webcam conditions.
 
-* Recognizes 24 static ASL letters; motion-based J and Z are excluded.
-* Supports single-hand recognition.
-* Test accuracy may not reflect performance under different real-world conditions.
+---
 
-⸻
-
-Tech Stack: Python · MediaPipe · OpenCV · NumPy · scikit-learn
+**Tech Stack:** Python · MediaPipe · OpenCV · NumPy · scikit-learn
