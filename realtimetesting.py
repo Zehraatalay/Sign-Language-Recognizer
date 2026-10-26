@@ -1,120 +1,229 @@
+from __future__ import annotations
+
+import argparse
 import pickle
+from pathlib import Path
+
 import cv2
 import mediapipe as mp
-import numpy as np
 
-# Modellerin yollarını tanımlayın
-DATA_DIR = "/Users/zehraatalay/Desktop/dataset"
-model_paths = {
-    "Random Forest": f"{DATA_DIR}/model.p",
-    "Decision Tree": f"{DATA_DIR}/decision_tree_model.p",
-    "Logistic Regression": f"{DATA_DIR}/logistic_model.p",
-    "SVM": f"{DATA_DIR}/svm_model.p",
-    "KNN": f"{DATA_DIR}/model_knn.p",
-    "Naive Bayes": f"{DATA_DIR}/naive_bayes_model.p",
-}
+from feature_extraction import extract_hand_features
 
-labels_dict = {
-    "A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6,
-    "H": 7, "I": 8, "K": 9, "L": 10, "M": 11, "N": 12, "O": 13,
-    "P": 14, "Q": 15, "R": 16, "S": 17, "T": 18, "U": 19,
-    "V": 20, "W": 21, "X": 22, "Y": 23
+
+MODEL_FILES = {
+    "random_forest": ("Random Forest", "model.p"),
+    "knn": ("KNN", "model_knn.p"),
+    "svm": ("SVM", "svm_model.p"),
+    "logistic_regression": ("Logistic Regression", "logistic_model.p"),
+    "decision_tree": ("Decision Tree", "decision_tree_model.p"),
+    "naive_bayes": ("Naive Bayes", "naive_bayes_model.p"),
 }
 
 
-# Tüm modelleri yükleyin
-models = {}
-for model_name, path in model_paths.items():
-    with open(path, "rb") as f:
-        models[model_name] = pickle.load(f)["model"]
+def load_models(models_dir: Path, selected_model: str) -> dict:
+    """Load the requested pretrained classifiers."""
+
+    if selected_model == "all":
+        selected_names = list(MODEL_FILES)
+    else:
+        selected_names = [selected_model]
+
+    models = {}
+
+    for model_name in selected_names:
+        display_name, filename = MODEL_FILES[model_name]
+        model_path = models_dir / filename
+
+        if not model_path.is_file():
+            if selected_model == "all":
+                print(f"[SKIP] {display_name}: model file not found.")
+                continue
+
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+
+        with model_path.open("rb") as file:
+            saved = pickle.load(file)
+
+        model = saved["model"] if isinstance(saved, dict) else saved
+
+        models[display_name] = model
+
+    if not models:
+        raise ValueError(f"No models found in: {models_dir}")
+
+    return models
 
 
-# Mediapipe kurulumları
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
-hands = mp_hands.Hands(static_image_mode=True, min_detection_confidence=0.3)
+def predict_sign(features, models: dict) -> dict[str, str]:
+    """Predict a sign using the selected classifiers."""
 
-# Video yakalama
-cap = cv2.VideoCapture(0)
+    # Scikit-learn expects a 2D input: (samples, features).
+    X = features.reshape(1, -1)
 
-while True:
-    data_aux = []
-    x_ = []
-    y_ = []
+    predictions = {}
 
-    ret, frame = cap.read()
-    if not ret:
-        break
+    for model_name, model in models.items():
+        prediction = model.predict(X)[0]
 
-    H, W, _ = frame.shape
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Models were trained using string labels such as "A", "B", "C".
+        predictions[model_name] = str(prediction)
 
-    # Mediapipe ile el işleme
-    results = hands.process(frame_rgb)
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                hand_landmarks,
-                mp_hands.HAND_CONNECTIONS,
-                mp_drawing_styles.get_default_hand_landmarks_style(),
-                mp_drawing_styles.get_default_hand_connections_style(),
-            )
+    return predictions
 
-            # Landmark'ları normalize et
-            for i in range(len(hand_landmarks.landmark)):
-                x = hand_landmarks.landmark[i].x
-                y = hand_landmarks.landmark[i].y
-                x_.append(x)
-                y_.append(y)
 
-            for i in range(len(hand_landmarks.landmark)):
-                x = hand_landmarks.landmark[i].x
-                y = hand_landmarks.landmark[i].y
-                data_aux.append(x - min(x_))
-                data_aux.append(y - min(y_))
+def run_webcam(models: dict, camera_index: int = 0) -> None:
+    """Run real-time hand sign recognition using the webcam."""
 
-            # Çerçeve koordinatları
-            x1 = int(min(x_) * W) - 10
-            y1 = int(min(y_) * H) - 10
-            x2 = int(max(x_) * W) + 10
-            y2 = int(max(y_) * H) + 10
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
 
-            # Her modelin tahmini
-            predictions = {}
-            for model_name, model in models.items():
-                try:
-                    prediction = model.predict([np.asarray(data_aux)])
-                    predictions[model_name] = labels_dict[int(prediction[0])]
-                except Exception as e:
-                    predictions[model_name] = f"Error: {str(e)}"
+    cap = cv2.VideoCapture(camera_index)
 
-            # Çerçeve üzerine yazdırma
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), 2)
-            y_offset = y1 - 10
-            font_scale = 1.0  # Daha büyük font için artırıldı
-            font_thickness = 2  # Daha kalın font
-            for model_name, prediction in predictions.items():
-                cv2.putText(
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError(
+            f"Cannot open camera {camera_index}. "
+            "Check camera permissions and device availability."
+        )
+
+    try:
+        with mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        ) as hands:
+            failed_frames = 0
+            max_failed_frames = 10
+            while True:
+                success, frame = cap.read()
+
+                if not success:
+                    failed_frames += 1
+
+                    if failed_frames >= max_failed_frames:
+                        print("Camera stopped providing frames.")
+                        break
+
+                    continue
+
+                failed_frames = 0
+                # Mirror the webcam image for a more natural preview.
+                frame = cv2.flip(frame, 1)
+
+                height, width = frame.shape[:2]
+
+                frame_rgb = cv2.cvtColor(
                     frame,
-                    f"{model_name}: {prediction}",
-                    (x1, y_offset),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_scale,  # Font büyüklüğü
-                    (255, 255, 255),
-                    font_thickness,  # Font kalınlığı
-                    cv2.LINE_AA,
+                    cv2.COLOR_BGR2RGB,
                 )
-                y_offset -= int(30 * font_scale)  # Satırlar arası mesafe artırıldı
 
-    # Çerçeveyi göster
-    cv2.imshow("Real-time Model Predictions", frame)
+                results = hands.process(frame_rgb)
 
-    # Çıkış için 'q' tuşuna bas
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+                if results.multi_hand_landmarks:
+                    hand_landmarks = results.multi_hand_landmarks[0]
 
-# Kaynakları serbest bırak ve pencereleri kapat
-cap.release()
-cv2.destroyAllWindows()
+                    mp_drawing.draw_landmarks(
+                        frame,
+                        hand_landmarks,
+                        mp_hands.HAND_CONNECTIONS,
+                        mp_drawing_styles.get_default_hand_landmarks_style(),
+                        mp_drawing_styles.get_default_hand_connections_style(),
+                    )
+
+                    features = extract_hand_features(hand_landmarks)
+                    predictions = predict_sign(features, models)
+
+                    x_coords = [
+                        landmark.x for landmark in hand_landmarks.landmark
+                    ]
+                    y_coords = [
+                        landmark.y for landmark in hand_landmarks.landmark
+                    ]
+
+                    x1 = max(0, int(min(x_coords) * width) - 10)
+                    y1 = max(0, int(min(y_coords) * height) - 10)
+                    x2 = min(width - 1, int(max(x_coords) * width) + 10)
+                    y2 = min(height - 1, int(max(y_coords) * height) + 10)
+
+                    cv2.rectangle(
+                        frame,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 0, 0),
+                        2,
+                    )
+
+                    # Show predictions in a fixed position to prevent
+                    # text from moving outside the frame.
+                    for index, (model_name, prediction) in enumerate(
+                        predictions.items()
+                    ):
+                        text = f"{model_name}: {prediction}"
+
+                        cv2.putText(
+                            frame,
+                            text,
+                            (15, 35 + index * 35),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8,
+                            (255, 255, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
+
+                cv2.imshow("Sign Language Recognition", frame)
+
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Real-time ASL recognition using pretrained ML models."
+    )
+
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        required=True,
+        help="Directory containing pretrained model files.",
+    )
+
+    parser.add_argument(
+        "--model",
+        choices=[*MODEL_FILES.keys(), "all"],
+        default="random_forest",
+        help="Classifier to use. Defaults to random_forest.",
+    )
+
+    parser.add_argument(
+        "--camera-index",
+        type=int,
+        default=0,
+        help="Camera device index. Defaults to 0.",
+    )
+
+    args = parser.parse_args()
+
+    models = load_models(
+        models_dir=args.models_dir,
+        selected_model=args.model,
+    )
+
+    print("Loaded models:", ", ".join(models))
+    print("Press 'q' to quit.")
+
+    run_webcam(
+        models=models,
+        camera_index=args.camera_index,
+    )
+
+
+if __name__ == "__main__":
+    main()
